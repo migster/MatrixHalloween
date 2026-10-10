@@ -4,8 +4,9 @@ An animated jack-o'-lantern face for:
 
 - Adafruit Matrix Portal S3, PID 5778
 - One 64x64 RGB LED Matrix, 2.5 mm pitch, 1/32 scan, PID 3649
+- One speaker driven by an NS4168 I2S amplifier
 
-## Phase 2
+## Phase 3
 
 The current `code.py` draws five smooth geometric faces:
 
@@ -23,6 +24,12 @@ Phase 1 animation:
 - an occasional left or right wink; and
 - a small, gently bobbing ghost that crosses the top of the display.
 
+As the ghost crosses the display, the NS4168 plays a synthesized, two-voice
+ghost wail. Slow pitch bends create the rising and falling voice, faster
+amplitude modulation adds a tremolo, and an envelope fades the sound in and
+out. The sound is generated entirely by CircuitPython's built-in `synthio`
+module, so no WAV file is required.
+
 The faces use the large triangular eyes and triangular nose from Phase 1.
 Expression-specific eye angles and mouth shapes distinguish each face without
 the blocky appearance of scaled pixel art. No external bitmap files or
@@ -36,12 +43,12 @@ from appearing during blinks and expression changes.
 
 ```text
 MatrixHalloween/
-├── code.py                 Phase 2 animated face collection
+├── code.py                 Phase 3 animated face and ghost sound
 ├── hello-world-test.py     Archived hardware test
 └── README.md
 ```
 
-The Phase 2 program only uses modules built into CircuitPython. It does not
+The Phase 3 program only uses modules built into CircuitPython. It does not
 require anything in `CIRCUITPY/lib`.
 
 The archived hardware test uses `adafruit_display_text`. To run that test,
@@ -59,7 +66,18 @@ install `adafruit_display_text` from the matching
    connected to `GND`.
 5. Bridge the MatrixPortal S3 **Address E** solder jumper to the pad marked
    **8**. The 64x64 1/32-scan panel needs this fifth row-address line.
-6. Copy this project's `code.py` to the root of the `CIRCUITPY` drive,
+6. Connect the NS4168 amplifier to the MatrixPortal S3:
+
+   | NS4168 | MatrixPortal S3 |
+   | ------ | --------------- |
+   | BCLK   | A1              |
+   | LRC    | A2              |
+   | DIN    | A3              |
+
+   Connect the amplifier and speaker power and ground according to the
+   amplifier board's requirements, with a common ground shared by the
+   MatrixPortal S3 and amplifier.
+7. Copy this project's `code.py` to the root of the `CIRCUITPY` drive,
    replacing the existing file. CircuitPython reloads it automatically.
 
 For this single-panel project, use the MatrixPortal S3's documented USB-C
@@ -77,6 +95,10 @@ WINK_CHANCE = 0.25
 GHOST_MIN_DELAY = 30
 GHOST_MAX_DELAY = 90
 GHOST_SPEED = 10
+AUDIO_SAMPLE_RATE = 22050
+GHOST_SOUND_ATTACK = 0.8
+GHOST_SOUND_RELEASE = 1.2
+GHOST_SOUND_VOLUME = 0.35
 ```
 
 - `FACE_DURATION` controls the number of seconds each face remains visible.
@@ -86,6 +108,10 @@ GHOST_SPEED = 10
   Use `0.0` for no winks or `1.0` for only winks.
 - Ghost delays and speed are measured in seconds and pixels per second. The
   next ghost appears 30 to 90 seconds after the previous ghost leaves.
+- `GHOST_SOUND_ATTACK` and `GHOST_SOUND_RELEASE` control the fade-in and
+  fade-out in seconds. `GHOST_SOUND_VOLUME` controls the peak synthesizer
+  level; keep it between `0.0` and `1.0` and start low when testing a new
+  speaker.
 - Change `bit_depth=3` only if you need a different balance between color
   smoothness and matrix refresh performance.
 
@@ -126,8 +152,25 @@ glitches remain after installing the latest `code.py`, check the USB-C cable
 and power supply. A glitch that becomes more frequent when more LEDs are lit
 usually indicates a power-delivery issue rather than an animation issue.
 
+### The ghost is silent
+
+- Confirm the amplifier wiring: BCLK to A1, LRC to A2, and DIN to A3.
+- Confirm the amplifier and MatrixPortal S3 share a common ground.
+- Verify that the amplifier is powered correctly and that any shutdown or
+  enable pin on the amplifier board is asserted.
+- Open the CircuitPython serial console and check for an exception indicating
+  that `audiobusio` or `synthio` is unavailable in the installed build.
+
+### The ghost sound is distorted or too loud
+
+Lower `GHOST_SOUND_VOLUME` and restart CircuitPython. Also verify that the
+speaker impedance and amplifier supply voltage are suitable for the NS4168
+board. Avoid testing at maximum volume.
+
 ## References
 
 - [Adafruit MatrixPortal S3 guide](https://learn.adafruit.com/adafruit-matrixportal-s3)
 - [MatrixPortal S3 hardware preparation](https://learn.adafruit.com/adafruit-matrixportal-s3/prep-the-matrixportal)
 - [RGB LED matrices with CircuitPython](https://learn.adafruit.com/rgb-led-matrices-matrix-panels-with-circuitpython)
+- [CircuitPython `audiobusio` documentation](https://docs.circuitpython.org/en/latest/shared-bindings/audiobusio/)
+- [CircuitPython `synthio` documentation](https://docs.circuitpython.org/en/latest/shared-bindings/synthio/)

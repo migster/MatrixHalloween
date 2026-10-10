@@ -1,11 +1,14 @@
+from array import array
 import math
 import random
 import time
 
+import audiobusio
 import board
 import displayio
 import framebufferio
 import rgbmatrix
+import synthio
 
 
 WIDTH = 64
@@ -17,6 +20,10 @@ WINK_CHANCE = 0.25
 GHOST_MIN_DELAY = 30
 GHOST_MAX_DELAY = 90
 GHOST_SPEED = 10
+AUDIO_SAMPLE_RATE = 22050
+GHOST_SOUND_ATTACK = 0.8
+GHOST_SOUND_RELEASE = 1.2
+GHOST_SOUND_VOLUME = 0.35
 
 BACKGROUND_COLOR = 0
 EYE_COLOR = 1
@@ -265,6 +272,85 @@ def draw_ghost(bitmap, position_x, position_y):
                 bitmap[screen_x, screen_y] = 2 if pixel == "X" else 1
 
 
+ghost_waveform = array("h")
+for sample_index in range(256):
+    phase = 2 * math.pi * sample_index / 256
+    ghost_waveform.append(int(32767 * math.sin(phase)))
+
+ghost_envelope = synthio.Envelope(
+    attack_time=GHOST_SOUND_ATTACK,
+    decay_time=0.4,
+    release_time=GHOST_SOUND_RELEASE,
+    attack_level=GHOST_SOUND_VOLUME,
+    sustain_level=GHOST_SOUND_VOLUME * 0.75,
+)
+ghost_bends = (
+    synthio.LFO(
+        ghost_waveform,
+        rate=0.18,
+        scale=2.2,
+    ),
+    synthio.LFO(
+        ghost_waveform,
+        rate=0.23,
+        scale=1.6,
+        phase_offset=0.35,
+    ),
+)
+ghost_tremolos = (
+    synthio.LFO(
+        ghost_waveform,
+        rate=1.3,
+        scale=0.12,
+        offset=0.82,
+    ),
+    synthio.LFO(
+        ghost_waveform,
+        rate=1.7,
+        scale=0.1,
+        offset=0.72,
+        phase_offset=0.5,
+    ),
+)
+ghost_notes = (
+    synthio.Note(
+        frequency=155,
+        waveform=ghost_waveform,
+        envelope=ghost_envelope,
+        bend=ghost_bends[0],
+        amplitude=ghost_tremolos[0],
+    ),
+    synthio.Note(
+        frequency=232.5,
+        waveform=ghost_waveform,
+        envelope=ghost_envelope,
+        bend=ghost_bends[1],
+        amplitude=ghost_tremolos[1],
+    ),
+)
+
+audio = audiobusio.I2SOut(
+    bit_clock=board.A1,
+    word_select=board.A2,
+    data=board.A3,
+)
+synth = synthio.Synthesizer(
+    sample_rate=AUDIO_SAMPLE_RATE,
+    channel_count=1,
+)
+audio.play(synth)
+
+
+def start_ghost_sound():
+    for oscillator in ghost_bends + ghost_tremolos:
+        oscillator.retrigger()
+    synth.press(ghost_notes)
+
+
+def stop_ghost_sound():
+    synth.release(ghost_notes)
+
+
 displayio.release_displays()
 
 matrix = rgbmatrix.RGBMatrix(
@@ -327,8 +413,10 @@ change_face_at = now + FACE_DURATION
 ghost_at = next_ghost_time(now)
 ghost_active = False
 ghost_started = 0
+ghost_sound_released = True
 last_ghost_x = -100
 last_ghost_y = -100
+ghost_crossing_duration = (WIDTH + GHOST_WIDTH + 1) / GHOST_SPEED
 
 while True:
     now = time.monotonic()
@@ -384,13 +472,25 @@ while True:
     if not ghost_active and now >= ghost_at:
         ghost_active = True
         ghost_started = now
+        ghost_sound_released = False
+        start_ghost_sound()
 
     if ghost_active:
         ghost_elapsed = now - ghost_started
         ghost_x = int(-GHOST_WIDTH + ghost_elapsed * GHOST_SPEED)
         ghost_y = 1 + int((math.sin(ghost_elapsed * 2.5) + 1.0))
 
+        if (
+            not ghost_sound_released
+            and ghost_elapsed >= ghost_crossing_duration - GHOST_SOUND_RELEASE
+        ):
+            stop_ghost_sound()
+            ghost_sound_released = True
+
         if ghost_x > WIDTH:
+            if not ghost_sound_released:
+                stop_ghost_sound()
+                ghost_sound_released = True
             ghost_active = False
             ghost_bitmap.fill(0)
             ghost_at = next_ghost_time(now)

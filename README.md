@@ -36,6 +36,10 @@ spooky laugh. The laugh takes priority over the ghost wail and has an
 independent volume setting. A configurable cooldown prevents repeated motion
 from playing the laugh too frequently.
 
+Pressing the MatrixPortal S3 down button toggles only the crossing ghost's
+wail. Muting is silent, while a confirmation tone plays when the ghost sound
+is enabled again. The motion-triggered laugh remains enabled in either state.
+
 The faces use the large triangular eyes and triangular nose from Phase 1.
 Expression-specific eye angles and mouth shapes distinguish each face without
 the blocky appearance of scaled pixel art. No external bitmap files or
@@ -118,6 +122,8 @@ GHOST_SOUND_VOLUME = 0.35
 PIR_DEBUG = True
 PIR_LAUGH_COOLDOWN = 60
 PIR_LAUGH_VOLUME = 0.4
+GHOST_UNMUTE_BEEP_VOLUME = 0.4
+BUTTON_DEBOUNCE_SECONDS = 0.25
 ```
 
 - `FACE_DURATION` controls the number of seconds each face remains visible.
@@ -138,8 +144,22 @@ PIR_LAUGH_VOLUME = 0.4
   Additional motion triggers during this interval are ignored.
 - `PIR_LAUGH_VOLUME` controls the laugh independently from the ghost wail.
   Keep it between `0.0` and `1.0` and start low to avoid distortion.
+- `GHOST_UNMUTE_BEEP_VOLUME` controls the volume of the confirmation tone
+  played when the ghost sound is enabled. `BUTTON_DEBOUNCE_SECONDS` prevents
+  one physical press from being interpreted as multiple presses.
 - Change `bit_depth=3` only if you need a different balance between color
   smoothness and matrix refresh performance.
+
+## Ghost sound mute
+
+Press the MatrixPortal S3 down button to toggle the ghost wail:
+
+- No tone means the ghost wail is now muted.
+- A confirmation tone means the ghost wail is now enabled.
+
+Muting during a ghost crossing stops the current wail. The setting applies
+until the button is pressed again or the board restarts; it does not mute the
+PIR-triggered laugh.
 
 ## Face styles
 

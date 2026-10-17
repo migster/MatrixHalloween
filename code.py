@@ -27,7 +27,9 @@ GHOST_SOUND_RELEASE = 1.2
 GHOST_SOUND_VOLUME = 0.35
 PIR_DEBUG = True
 PIR_LAUGH_COOLDOWN = 60
-PIR_LAUGH_VOLUME = 0.4
+PIR_LAUGH_VOLUME = 0.6
+GHOST_UNMUTE_BEEP_VOLUME = 0.4
+BUTTON_DEBOUNCE_SECONDS = 0.25
 
 BACKGROUND_COLOR = 0
 EYE_COLOR = 1
@@ -370,6 +372,19 @@ LAUGH_PATTERN = (
     (1.55, 170, 0.32),
 )
 
+unmute_beep_envelope = synthio.Envelope(
+    attack_time=0.01,
+    decay_time=0.02,
+    release_time=0.05,
+    attack_level=GHOST_UNMUTE_BEEP_VOLUME,
+    sustain_level=GHOST_UNMUTE_BEEP_VOLUME * 0.8,
+)
+unmute_beep_note = synthio.Note(
+    frequency=880,
+    waveform=ghost_waveform,
+    envelope=unmute_beep_envelope,
+)
+
 audio = audiobusio.I2SOut(
     bit_clock=board.A1,
     word_select=board.A2,
@@ -446,9 +461,33 @@ def update_laugh(now):
             print("PIR spooky laugh finished")
 
 
+def start_unmute_beep(now):
+    global unmute_beep_active
+    global unmute_beep_ends
+
+    if unmute_beep_active:
+        synth.release(unmute_beep_note)
+
+    synth.press(unmute_beep_note)
+    unmute_beep_active = True
+    unmute_beep_ends = now + 0.2
+
+
+def update_unmute_beep(now):
+    global unmute_beep_active
+
+    if unmute_beep_active and now >= unmute_beep_ends:
+        synth.release(unmute_beep_note)
+        unmute_beep_active = False
+
+
 pir = digitalio.DigitalInOut(board.A4)
 pir.switch_to_input(pull=digitalio.Pull.DOWN)
 last_pir_value = pir.value
+
+down_button = digitalio.DigitalInOut(board.BUTTON_DOWN)
+down_button.switch_to_input(pull=digitalio.Pull.UP)
+last_down_button_value = down_button.value
 
 if PIR_DEBUG:
     print("PIR debug enabled on A4")
@@ -527,9 +566,31 @@ laugh_note_ends = 0
 laugh_pattern_index = 0
 laugh_started = 0
 next_laugh_allowed_at = 0
+ghost_sound_muted = False
+unmute_beep_active = False
+unmute_beep_ends = 0
+next_button_press_at = 0
 
 while True:
     now = time.monotonic()
+
+    down_button_value = down_button.value
+    if (
+        not down_button_value
+        and last_down_button_value
+        and now >= next_button_press_at
+    ):
+        ghost_sound_muted = not ghost_sound_muted
+        next_button_press_at = now + BUTTON_DEBOUNCE_SECONDS
+
+        if ghost_sound_muted and not ghost_sound_released:
+            stop_ghost_sound()
+            ghost_sound_released = True
+
+        if not ghost_sound_muted:
+            start_unmute_beep(now)
+        print("Ghost sound muted" if ghost_sound_muted else "Ghost sound enabled")
+    last_down_button_value = down_button_value
 
     pir_value = pir.value
     if pir_value != last_pir_value:
@@ -552,6 +613,7 @@ while True:
         last_pir_value = pir_value
 
     update_laugh(now)
+    update_unmute_beep(now)
 
     glow = (math.sin(now * 1.2) + 1.0) / 2.0
     brightness = int(70 + glow * 185)
@@ -604,7 +666,7 @@ while True:
     if not ghost_active and now >= ghost_at:
         ghost_active = True
         ghost_started = now
-        if laugh_active:
+        if laugh_active or ghost_sound_muted:
             ghost_sound_released = True
         else:
             ghost_sound_released = False

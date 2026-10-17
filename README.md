@@ -5,8 +5,9 @@ An animated jack-o'-lantern face for:
 - Adafruit Matrix Portal S3, PID 5778
 - One 64x64 RGB LED Matrix, 2.5 mm pitch, 1/32 scan, PID 3649
 - One speaker driven by an NS4168 I2S amplifier
+- One HC-SR501 PIR motion sensor
 
-## Phase 3
+## Phase 4
 
 The current `code.py` draws five smooth geometric faces:
 
@@ -30,6 +31,11 @@ amplitude modulation adds a tremolo, and an envelope fades the sound in and
 out. The sound is generated entirely by CircuitPython's built-in `synthio`
 module, so no WAV file is required.
 
+When the PIR sensor detects motion on A4, the speaker plays a synthesized
+spooky laugh. The laugh takes priority over the ghost wail and has an
+independent volume setting. A configurable cooldown prevents repeated motion
+from playing the laugh too frequently.
+
 The faces use the large triangular eyes and triangular nose from Phase 1.
 Expression-specific eye angles and mouth shapes distinguish each face without
 the blocky appearance of scaled pixel art. No external bitmap files or
@@ -43,12 +49,12 @@ from appearing during blinks and expression changes.
 
 ```text
 MatrixHalloween/
-├── code.py                 Phase 3 animated face and ghost sound
+├── code.py                 Phase 4 animated face, sound, and motion trigger
 ├── hello-world-test.py     Archived hardware test
 └── README.md
 ```
 
-The Phase 3 program only uses modules built into CircuitPython. It does not
+The Phase 4 program only uses modules built into CircuitPython. It does not
 require anything in `CIRCUITPY/lib`.
 
 The archived hardware test uses `adafruit_display_text`. To run that test,
@@ -77,7 +83,17 @@ install `adafruit_display_text` from the matching
    Connect the amplifier and speaker power and ground according to the
    amplifier board's requirements, with a common ground shared by the
    MatrixPortal S3 and amplifier.
-7. Copy this project's `code.py` to the root of the `CIRCUITPY` drive,
+7. Connect the HC-SR501 PIR sensor to the MatrixPortal S3:
+
+   | HC-SR501 | MatrixPortal S3 |
+   | -------- | --------------- |
+   | VCC      | +5V             |
+   | OUT      | A4              |
+   | GND      | GND             |
+
+   Check the labels on the specific sensor before connecting it because some
+   compatible modules arrange these three pins differently.
+8. Copy this project's `code.py` to the root of the `CIRCUITPY` drive,
    replacing the existing file. CircuitPython reloads it automatically.
 
 For this single-panel project, use the MatrixPortal S3's documented USB-C
@@ -99,6 +115,9 @@ AUDIO_SAMPLE_RATE = 22050
 GHOST_SOUND_ATTACK = 0.8
 GHOST_SOUND_RELEASE = 1.2
 GHOST_SOUND_VOLUME = 0.35
+PIR_DEBUG = True
+PIR_LAUGH_COOLDOWN = 60
+PIR_LAUGH_VOLUME = 0.4
 ```
 
 - `FACE_DURATION` controls the number of seconds each face remains visible.
@@ -112,6 +131,13 @@ GHOST_SOUND_VOLUME = 0.35
   fade-out in seconds. `GHOST_SOUND_VOLUME` controls the peak synthesizer
   level; keep it between `0.0` and `1.0` and start low when testing a new
   speaker.
+- `PIR_DEBUG` prints the initial A4 input state and every subsequent HIGH or
+  LOW transition to the CircuitPython serial console. Set it to `False` after
+  confirming the PIR wiring and signal.
+- `PIR_LAUGH_COOLDOWN` is the minimum number of seconds between laughs.
+  Additional motion triggers during this interval are ignored.
+- `PIR_LAUGH_VOLUME` controls the laugh independently from the ghost wail.
+  Keep it between `0.0` and `1.0` and start low to avoid distortion.
 - Change `bit_depth=3` only if you need a different balance between color
   smoothness and matrix refresh performance.
 
@@ -166,6 +192,23 @@ usually indicates a power-delivery issue rather than an animation issue.
 Lower `GHOST_SOUND_VOLUME` and restart CircuitPython. Also verify that the
 speaker impedance and amplifier supply voltage are suitable for the NS4168
 board. Avoid testing at maximum volume.
+
+### The PIR sensor does not respond
+
+With `PIR_DEBUG = True`, open the CircuitPython serial console and restart the
+board. It should first report that PIR debugging is enabled and show the
+initial A4 state. After the HC-SR501's 30-60 second warm-up period, motion
+should produce a `HIGH` message and the signal returning idle should produce a
+`LOW` message.
+
+A valid motion trigger also prints `PIR spooky laugh started`. During the
+60-second default cooldown, a new HIGH transition instead reports how many
+seconds remain before another laugh is allowed.
+
+If no transitions appear, verify that the HC-SR501 output is connected to A4,
+that its ground is shared with the MatrixPortal S3, and that it is powered
+from 5 V. Also confirm the pin order printed on the specific sensor module,
+because some HC-SR501-compatible boards arrange the pins differently.
 
 ## References
 

@@ -5,6 +5,7 @@ import time
 
 import audiobusio
 import board
+import digitalio
 import displayio
 import framebufferio
 import rgbmatrix
@@ -24,6 +25,9 @@ AUDIO_SAMPLE_RATE = 22050
 GHOST_SOUND_ATTACK = 0.8
 GHOST_SOUND_RELEASE = 1.2
 GHOST_SOUND_VOLUME = 0.35
+PIR_DEBUG = True
+PIR_LAUGH_COOLDOWN = 60
+PIR_LAUGH_VOLUME = 0.4
 
 BACKGROUND_COLOR = 0
 EYE_COLOR = 1
@@ -277,6 +281,16 @@ for sample_index in range(256):
     phase = 2 * math.pi * sample_index / 256
     ghost_waveform.append(int(32767 * math.sin(phase)))
 
+laugh_waveform = array("h")
+for sample_index in range(256):
+    phase = 2 * math.pi * sample_index / 256
+    sample = (
+        0.65 * math.sin(phase)
+        + 0.25 * math.sin(phase * 2)
+        + 0.1 * math.sin(phase * 3)
+    )
+    laugh_waveform.append(int(32767 * sample))
+
 ghost_envelope = synthio.Envelope(
     attack_time=GHOST_SOUND_ATTACK,
     decay_time=0.4,
@@ -329,6 +343,33 @@ ghost_notes = (
     ),
 )
 
+laugh_envelope = synthio.Envelope(
+    attack_time=0.03,
+    decay_time=0.05,
+    release_time=0.1,
+    attack_level=PIR_LAUGH_VOLUME,
+    sustain_level=PIR_LAUGH_VOLUME * 0.7,
+)
+laugh_bend = synthio.LFO(
+    ghost_waveform,
+    rate=7.0,
+    scale=0.35,
+)
+laugh_note = synthio.Note(
+    frequency=220,
+    waveform=laugh_waveform,
+    envelope=laugh_envelope,
+    bend=laugh_bend,
+)
+LAUGH_PATTERN = (
+    (0.00, 235, 0.18),
+    (0.28, 205, 0.20),
+    (0.58, 225, 0.18),
+    (0.88, 190, 0.22),
+    (1.22, 210, 0.20),
+    (1.55, 170, 0.32),
+)
+
 audio = audiobusio.I2SOut(
     bit_clock=board.A1,
     word_select=board.A2,
@@ -349,6 +390,69 @@ def start_ghost_sound():
 
 def stop_ghost_sound():
     synth.release(ghost_notes)
+
+
+def start_laugh(now):
+    global ghost_sound_released
+    global laugh_active
+    global laugh_note_active
+    global laugh_pattern_index
+    global laugh_started
+
+    if not ghost_sound_released:
+        stop_ghost_sound()
+        ghost_sound_released = True
+
+    laugh_bend.retrigger()
+    laugh_active = True
+    laugh_note_active = False
+    laugh_pattern_index = 0
+    laugh_started = now
+
+    if PIR_DEBUG:
+        print("PIR spooky laugh started")
+
+
+def update_laugh(now):
+    global laugh_active
+    global laugh_note_active
+    global laugh_note_ends
+    global laugh_pattern_index
+
+    if not laugh_active:
+        return
+
+    if laugh_note_active and now >= laugh_note_ends:
+        synth.release(laugh_note)
+        laugh_note_active = False
+
+    elapsed = now - laugh_started
+    if (
+        not laugh_note_active
+        and laugh_pattern_index < len(LAUGH_PATTERN)
+        and elapsed >= LAUGH_PATTERN[laugh_pattern_index][0]
+    ):
+        _, frequency, duration = LAUGH_PATTERN[laugh_pattern_index]
+        laugh_note.frequency = frequency
+        laugh_bend.retrigger()
+        synth.press(laugh_note)
+        laugh_note_active = True
+        laugh_note_ends = now + duration
+        laugh_pattern_index += 1
+
+    if laugh_pattern_index == len(LAUGH_PATTERN) and not laugh_note_active:
+        laugh_active = False
+        if PIR_DEBUG:
+            print("PIR spooky laugh finished")
+
+
+pir = digitalio.DigitalInOut(board.A4)
+pir.switch_to_input(pull=digitalio.Pull.DOWN)
+last_pir_value = pir.value
+
+if PIR_DEBUG:
+    print("PIR debug enabled on A4")
+    print("Initial PIR signal:", "HIGH" if last_pir_value else "LOW")
 
 
 displayio.release_displays()
@@ -417,9 +521,37 @@ ghost_sound_released = True
 last_ghost_x = -100
 last_ghost_y = -100
 ghost_crossing_duration = (WIDTH + GHOST_WIDTH + 1) / GHOST_SPEED
+laugh_active = False
+laugh_note_active = False
+laugh_note_ends = 0
+laugh_pattern_index = 0
+laugh_started = 0
+next_laugh_allowed_at = 0
 
 while True:
     now = time.monotonic()
+
+    pir_value = pir.value
+    if pir_value != last_pir_value:
+        if PIR_DEBUG:
+            if pir_value:
+                print("PIR motion signal received on A4: HIGH")
+            else:
+                print("PIR signal cleared on A4: LOW")
+        if pir_value:
+            if now >= next_laugh_allowed_at:
+                start_laugh(now)
+                next_laugh_allowed_at = now + PIR_LAUGH_COOLDOWN
+            elif PIR_DEBUG:
+                cooldown_remaining = int(next_laugh_allowed_at - now + 0.999)
+                print(
+                    "PIR laugh suppressed; cooldown remaining:",
+                    cooldown_remaining,
+                    "seconds",
+                )
+        last_pir_value = pir_value
+
+    update_laugh(now)
 
     glow = (math.sin(now * 1.2) + 1.0) / 2.0
     brightness = int(70 + glow * 185)
@@ -472,8 +604,11 @@ while True:
     if not ghost_active and now >= ghost_at:
         ghost_active = True
         ghost_started = now
-        ghost_sound_released = False
-        start_ghost_sound()
+        if laugh_active:
+            ghost_sound_released = True
+        else:
+            ghost_sound_released = False
+            start_ghost_sound()
 
     if ghost_active:
         ghost_elapsed = now - ghost_started

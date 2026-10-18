@@ -26,8 +26,8 @@ GHOST_SOUND_ATTACK = 0.8
 GHOST_SOUND_RELEASE = 1.2
 GHOST_SOUND_VOLUME = 0.35
 PIR_DEBUG = True
-PIR_LAUGH_COOLDOWN = 60
-PIR_LAUGH_VOLUME = 0.6
+PIR_SOUND_COOLDOWN = 60
+PIR_SOUND_VOLUME = 0.6
 GHOST_UNMUTE_BEEP_VOLUME = 0.4
 BUTTON_DEBOUNCE_SECONDS = 0.25
 
@@ -293,6 +293,9 @@ for sample_index in range(256):
     )
     laugh_waveform.append(int(32767 * sample))
 
+rise_waveform = array("h", (-32768, 32767))
+fall_waveform = array("h", (32767, -32768))
+
 ghost_envelope = synthio.Envelope(
     attack_time=GHOST_SOUND_ATTACK,
     decay_time=0.4,
@@ -349,8 +352,8 @@ laugh_envelope = synthio.Envelope(
     attack_time=0.03,
     decay_time=0.05,
     release_time=0.1,
-    attack_level=PIR_LAUGH_VOLUME,
-    sustain_level=PIR_LAUGH_VOLUME * 0.7,
+    attack_level=PIR_SOUND_VOLUME,
+    sustain_level=PIR_SOUND_VOLUME * 0.7,
 )
 laugh_bend = synthio.LFO(
     ghost_waveform,
@@ -363,13 +366,107 @@ laugh_note = synthio.Note(
     envelope=laugh_envelope,
     bend=laugh_bend,
 )
-LAUGH_PATTERN = (
-    (0.00, 235, 0.18),
-    (0.28, 205, 0.20),
-    (0.58, 225, 0.18),
-    (0.88, 190, 0.22),
-    (1.22, 210, 0.20),
-    (1.55, 170, 0.32),
+
+long_effect_envelope = synthio.Envelope(
+    attack_time=0.12,
+    decay_time=0.1,
+    release_time=0.3,
+    attack_level=PIR_SOUND_VOLUME,
+    sustain_level=PIR_SOUND_VOLUME * 0.75,
+)
+short_effect_envelope = synthio.Envelope(
+    attack_time=0.02,
+    decay_time=0.03,
+    release_time=0.1,
+    attack_level=PIR_SOUND_VOLUME,
+    sustain_level=PIR_SOUND_VOLUME * 0.65,
+)
+scream_bend = synthio.LFO(
+    rise_waveform,
+    rate=0.65,
+    scale=6.0,
+    once=True,
+)
+scream_note = synthio.Note(
+    frequency=420,
+    waveform=laugh_waveform,
+    envelope=long_effect_envelope,
+    bend=scream_bend,
+)
+howl_bend = synthio.LFO(
+    ghost_waveform,
+    rate=0.55,
+    scale=2.8,
+)
+howl_note = synthio.Note(
+    frequency=185,
+    waveform=ghost_waveform,
+    envelope=long_effect_envelope,
+    bend=howl_bend,
+)
+caw_bend = synthio.LFO(
+    fall_waveform,
+    rate=3.0,
+    scale=3.0,
+    once=True,
+)
+caw_note = synthio.Note(
+    frequency=310,
+    waveform=laugh_waveform,
+    envelope=short_effect_envelope,
+    bend=caw_bend,
+)
+heartbeat_note = synthio.Note(
+    frequency=140,
+    waveform=ghost_waveform,
+    envelope=short_effect_envelope,
+)
+creak_bend = synthio.LFO(
+    fall_waveform,
+    rate=0.7,
+    scale=7.0,
+    once=True,
+)
+creak_note = synthio.Note(
+    frequency=300,
+    waveform=laugh_waveform,
+    envelope=long_effect_envelope,
+    bend=creak_bend,
+)
+
+PIR_SOUND_PATTERNS = (
+    (
+        "spooky laugh",
+        (
+            (0.00, laugh_note, 235, 0.18, laugh_bend),
+            (0.28, laugh_note, 205, 0.20, laugh_bend),
+            (0.58, laugh_note, 225, 0.18, laugh_bend),
+            (0.88, laugh_note, 190, 0.22, laugh_bend),
+            (1.22, laugh_note, 210, 0.20, laugh_bend),
+            (1.55, laugh_note, 170, 0.32, laugh_bend),
+        ),
+    ),
+    ("scream", ((0.00, scream_note, 420, 1.6, scream_bend),)),
+    ("wolf howl", ((0.00, howl_note, 185, 2.8, howl_bend),)),
+    (
+        "raven caw",
+        (
+            (0.00, caw_note, 330, 0.20, caw_bend),
+            (0.30, caw_note, 260, 0.30, caw_bend),
+        ),
+    ),
+    (
+        "heartbeat",
+        (
+            (0.00, heartbeat_note, 145, 0.12, None),
+            (0.22, heartbeat_note, 115, 0.16, None),
+            (0.75, heartbeat_note, 145, 0.12, None),
+            (0.97, heartbeat_note, 115, 0.16, None),
+            (1.50, heartbeat_note, 145, 0.12, None),
+            (1.72, heartbeat_note, 115, 0.16, None),
+        ),
+    ),
+    ("creaking door", ((0.00, creak_note, 300, 1.6, creak_bend),)),
 )
 
 unmute_beep_envelope = synthio.Envelope(
@@ -407,58 +504,69 @@ def stop_ghost_sound():
     synth.release(ghost_notes)
 
 
-def start_laugh(now):
+def start_pir_sound(now):
     global ghost_sound_released
-    global laugh_active
-    global laugh_note_active
-    global laugh_pattern_index
-    global laugh_started
+    global pir_sound_active
+    global pir_sound_name
+    global pir_sound_note_active
+    global pir_sound_pattern
+    global pir_sound_pattern_index
+    global pir_sound_started
 
     if not ghost_sound_released:
         stop_ghost_sound()
         ghost_sound_released = True
 
-    laugh_bend.retrigger()
-    laugh_active = True
-    laugh_note_active = False
-    laugh_pattern_index = 0
-    laugh_started = now
+    pattern_index = int(random.random() * len(PIR_SOUND_PATTERNS))
+    pir_sound_name, pir_sound_pattern = PIR_SOUND_PATTERNS[pattern_index]
+    pir_sound_active = True
+    pir_sound_note_active = False
+    pir_sound_pattern_index = 0
+    pir_sound_started = now
 
     if PIR_DEBUG:
-        print("PIR spooky laugh started")
+        print("PIR sound started:", pir_sound_name)
 
 
-def update_laugh(now):
-    global laugh_active
-    global laugh_note_active
-    global laugh_note_ends
-    global laugh_pattern_index
+def update_pir_sound(now):
+    global pir_sound_active
+    global pir_sound_note
+    global pir_sound_note_active
+    global pir_sound_note_ends
+    global pir_sound_pattern_index
 
-    if not laugh_active:
+    if not pir_sound_active:
         return
 
-    if laugh_note_active and now >= laugh_note_ends:
-        synth.release(laugh_note)
-        laugh_note_active = False
+    if pir_sound_note_active and now >= pir_sound_note_ends:
+        synth.release(pir_sound_note)
+        pir_sound_note_active = False
 
-    elapsed = now - laugh_started
+    elapsed = now - pir_sound_started
     if (
-        not laugh_note_active
-        and laugh_pattern_index < len(LAUGH_PATTERN)
-        and elapsed >= LAUGH_PATTERN[laugh_pattern_index][0]
+        not pir_sound_note_active
+        and pir_sound_pattern_index < len(pir_sound_pattern)
+        and elapsed >= pir_sound_pattern[pir_sound_pattern_index][0]
     ):
-        _, frequency, duration = LAUGH_PATTERN[laugh_pattern_index]
-        laugh_note.frequency = frequency
-        laugh_bend.retrigger()
-        synth.press(laugh_note)
-        laugh_note_active = True
-        laugh_note_ends = now + duration
-        laugh_pattern_index += 1
+        _, note, frequency, duration, bend = pir_sound_pattern[
+            pir_sound_pattern_index
+        ]
+        note.frequency = frequency
+        if bend is not None:
+            bend.retrigger()
+        synth.press(note)
+        pir_sound_note = note
+        pir_sound_note_active = True
+        pir_sound_note_ends = now + duration
+        pir_sound_pattern_index += 1
 
-    if laugh_pattern_index == len(LAUGH_PATTERN) and not laugh_note_active:
-        laugh_active = False
+    if (
+        pir_sound_pattern_index == len(pir_sound_pattern)
+        and not pir_sound_note_active
+    ):
+        pir_sound_active = False
         if PIR_DEBUG:
-            print("PIR spooky laugh finished")
+            print("PIR sound finished:", pir_sound_name)
 
 
 def start_unmute_beep(now):
@@ -560,12 +668,15 @@ ghost_sound_released = True
 last_ghost_x = -100
 last_ghost_y = -100
 ghost_crossing_duration = (WIDTH + GHOST_WIDTH + 1) / GHOST_SPEED
-laugh_active = False
-laugh_note_active = False
-laugh_note_ends = 0
-laugh_pattern_index = 0
-laugh_started = 0
-next_laugh_allowed_at = 0
+pir_sound_active = False
+pir_sound_name = ""
+pir_sound_note = laugh_note
+pir_sound_note_active = False
+pir_sound_note_ends = 0
+pir_sound_pattern = ()
+pir_sound_pattern_index = 0
+pir_sound_started = 0
+next_pir_sound_allowed_at = 0
 ghost_sound_muted = False
 unmute_beep_active = False
 unmute_beep_ends = 0
@@ -600,19 +711,21 @@ while True:
             else:
                 print("PIR signal cleared on A4: LOW")
         if pir_value:
-            if now >= next_laugh_allowed_at:
-                start_laugh(now)
-                next_laugh_allowed_at = now + PIR_LAUGH_COOLDOWN
+            if now >= next_pir_sound_allowed_at:
+                start_pir_sound(now)
+                next_pir_sound_allowed_at = now + PIR_SOUND_COOLDOWN
             elif PIR_DEBUG:
-                cooldown_remaining = int(next_laugh_allowed_at - now + 0.999)
+                cooldown_remaining = int(
+                    next_pir_sound_allowed_at - now + 0.999
+                )
                 print(
-                    "PIR laugh suppressed; cooldown remaining:",
+                    "PIR sound suppressed; cooldown remaining:",
                     cooldown_remaining,
                     "seconds",
                 )
         last_pir_value = pir_value
 
-    update_laugh(now)
+    update_pir_sound(now)
     update_unmute_beep(now)
 
     glow = (math.sin(now * 1.2) + 1.0) / 2.0
@@ -666,7 +779,7 @@ while True:
     if not ghost_active and now >= ghost_at:
         ghost_active = True
         ghost_started = now
-        if laugh_active or ghost_sound_muted:
+        if pir_sound_active or ghost_sound_muted:
             ghost_sound_released = True
         else:
             ghost_sound_released = False

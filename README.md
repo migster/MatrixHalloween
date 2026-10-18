@@ -31,14 +31,15 @@ amplitude modulation adds a tremolo, and an envelope fades the sound in and
 out. The sound is generated entirely by CircuitPython's built-in `synthio`
 module, so no WAV file is required.
 
-When the PIR sensor detects motion on A4, the speaker plays a synthesized
-spooky laugh. The laugh takes priority over the ghost wail and has an
-independent volume setting. A configurable cooldown prevents repeated motion
-from playing the laugh too frequently.
+When the PIR sensor detects motion on A4, the speaker randomly plays one of
+six synthesized effects: a spooky laugh, scream, wolf howl, raven caw,
+heartbeat, or creaking door. PIR sounds take priority over the ghost wail and
+have an independent volume setting. A configurable cooldown prevents repeated
+motion from playing sounds too frequently.
 
 Pressing the MatrixPortal S3 down button toggles only the crossing ghost's
 wail. Muting is silent, while a confirmation tone plays when the ghost sound
-is enabled again. The motion-triggered laugh remains enabled in either state.
+is enabled again. The motion-triggered sounds remain enabled in either state.
 
 The faces use the large triangular eyes and triangular nose from Phase 1.
 Expression-specific eye angles and mouth shapes distinguish each face without
@@ -120,8 +121,8 @@ GHOST_SOUND_ATTACK = 0.8
 GHOST_SOUND_RELEASE = 1.2
 GHOST_SOUND_VOLUME = 0.35
 PIR_DEBUG = True
-PIR_LAUGH_COOLDOWN = 60
-PIR_LAUGH_VOLUME = 0.4
+PIR_SOUND_COOLDOWN = 60
+PIR_SOUND_VOLUME = 0.6
 GHOST_UNMUTE_BEEP_VOLUME = 0.4
 BUTTON_DEBOUNCE_SECONDS = 0.25
 ```
@@ -140,9 +141,10 @@ BUTTON_DEBOUNCE_SECONDS = 0.25
 - `PIR_DEBUG` prints the initial A4 input state and every subsequent HIGH or
   LOW transition to the CircuitPython serial console. Set it to `False` after
   confirming the PIR wiring and signal.
-- `PIR_LAUGH_COOLDOWN` is the minimum number of seconds between laughs.
+- `PIR_SOUND_COOLDOWN` is the minimum number of seconds between PIR sounds.
   Additional motion triggers during this interval are ignored.
-- `PIR_LAUGH_VOLUME` controls the laugh independently from the ghost wail.
+- `PIR_SOUND_VOLUME` controls all random PIR effects independently from the
+  ghost wail.
   Keep it between `0.0` and `1.0` and start low to avoid distortion.
 - `GHOST_UNMUTE_BEEP_VOLUME` controls the volume of the confirmation tone
   played when the ghost sound is enabled. `BUTTON_DEBOUNCE_SECONDS` prevents
@@ -159,7 +161,7 @@ Press the MatrixPortal S3 down button to toggle the ghost wail:
 
 Muting during a ghost crossing stops the current wail. The setting applies
 until the button is pressed again or the board restarts; it does not mute the
-PIR-triggered laugh.
+PIR-triggered sounds.
 
 ## Face styles
 
@@ -221,9 +223,10 @@ initial A4 state. After the HC-SR501's 30-60 second warm-up period, motion
 should produce a `HIGH` message and the signal returning idle should produce a
 `LOW` message.
 
-A valid motion trigger also prints `PIR spooky laugh started`. During the
-60-second default cooldown, a new HIGH transition instead reports how many
-seconds remain before another laugh is allowed.
+A valid motion trigger also prints the selected effect, such as
+`PIR sound started: wolf howl`. During the 60-second default cooldown, a new
+HIGH transition instead reports how many seconds remain before another sound
+is allowed.
 
 If no transitions appear, verify that the HC-SR501 output is connected to A4,
 that its ground is shared with the MatrixPortal S3, and that it is powered
